@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.glmh/
+*.log
+*.bun-build
+eval/results/

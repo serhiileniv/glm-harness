@@ -1,0 +1,17 @@
+{
+  "name": "glm-harness",
+  "version": "0.1.0",
+  "description": "Terminal coding agent built for GLM-4.7-Flash. Free with your own key.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "glmh": "src/cli.ts" },
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit",
+    "build": "bun build --compile src/cli.ts --outfile dist/glmh",
+    "build:all": "bun build --compile --target=bun-darwin-arm64 src/cli.ts --outfile dist/glmh-darwin-arm64 && bun build --compile --target=bun-linux-x64 src/cli.ts --outfile dist/glmh-linux-x64",
+    "eval": "bun run eval/run.ts"
+  },
+  "devDependencies": { "@types/bun": "latest", "typescript": "^5.6.0" }
+}

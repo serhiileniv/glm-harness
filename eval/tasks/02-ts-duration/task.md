@@ -1,0 +1,1 @@
+Implement parseDuration in src/duration.ts so the tests in test/duration.test.ts pass. It parses strings like "1h30m", "45s", "500ms", "2h" into milliseconds and throws on invalid input. Do not change the tests.

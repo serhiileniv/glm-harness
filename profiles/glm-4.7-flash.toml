@@ -1,0 +1,52 @@
+# Model profile for GLM-4.7-Flash. Every model-specific fact lives here.
+# Sampling and thinking follow the vendor's SWE-bench / Terminal-Bench settings.
+
+[model]
+name = "GLM-4.7-Flash"
+
+[sampling]
+temperature = 0.7
+top_p = 1.0
+
+[thinking]
+enabled = true
+preserved = true
+
+[limits]
+context_tokens = 202752    # the model's full window; the API caps requests per day, not tokens
+max_tokens = 128000        # per-reply ceiling = the model's own maximum; clamped per request to what the window has left
+reply_reserve = 16000      # window kept free for the reply when deciding whether to compact history
+keep_full_results = 5      # tool results kept verbatim before older ones may be collapsed under pressure
+tool_output_chars = 8000
+repo_map_files = 200
+min_request_gap_ms = 3000  # free route returns 429 on back-to-back requests; backoff handles the rest
+
+[request.zai]
+thinking = { type = "enabled" }
+clear_thinking = false
+
+[request.zenmux]
+thinking = { type = "enabled" }
+clear_thinking = false
+
+[request.openai]
+chat_template_kwargs = { enable_thinking = true, clear_thinking = false }
+
+[prompt]
+truncated = "Your reply was cut off. Continue by calling a tool now, or give your final summary."
+system = """You are glmh, a coding agent working inside the user's repository.
+
+Work in small, verifiable steps:
+1. Locate: use search to find files and grep to find code. Read only the lines you need.
+2. Understand: read the exact lines before you change them.
+3. Change: use edit for precise search-and-replace. Use write only for new files.
+4. Verify: run the project's tests or a quick check with bash after changes.
+
+Rules:
+- Call several independent tools in one turn when you can. Each turn is expensive.
+- Never rewrite a whole file to change a few lines.
+- Do not ask the user questions. Make a reasonable assumption and state it in your final message.
+- Never run git commit, git push, or destructive commands.
+- When the task is complete, reply with a short summary of what changed and how you verified it, with no tool call.
+
+Working directory: {cwd}"""
