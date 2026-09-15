@@ -168,3 +168,47 @@ About 150 lines for streaming, 700 for the TUI, 100 of changes to existing files
 1. Should `glmh "task"` in a TTY open the TUI and stay open after the task, or remain a plain one-shot that exits? Proposed: remain plain, `--tui "task"` for the other behaviour.
 2. Reasoning collapsed by default with `/think` to expand, or expanded by default? Proposed: collapsed.
 3. Should Ctrl-C twice quit, or only `/quit` and Ctrl-D? Proposed: twice within a second quits.
+
+## Visual design v2 (amendment, 2026-09-15)
+
+Principles: three levels of attention (task and answer primary; tool activity secondary,
+indented and dim, stacked without blank lines; metadata tertiary), one accent colour (cyan is
+the agent; green and red are outcomes; yellow means look here), minimal chrome (no filled
+bars), comfort over cleverness.
+
+```
+ glmh 0.1.0 · GLM-4.7-Flash · zai · repo main ✚3                        today 27 / ~1000
+
+ ── 12:04 ──────────────────────────────────────────────────────────────────────────
+ you › task text
+
+       thinking (312 chars) · /think
+   → grep /pattern/ in test
+     ✓ 3 matches
+   → $ bun test
+     │ 14 pass
+     │ 0 fail
+     ✓ exit code 0, 1.9s
+
+ glm › answer, markdown rendered
+
+   ✓ done · 48s · 5 requests · 4 tool calls · 11,208 in / 1,412 out
+     src/auth.ts | 5 ++-
+     today 28 / ~1000 · about 120 more tasks like this one
+
+ ⠹ turn 3 · writing 12s · 1,860 in · 2 tool calls · Esc cancels
+ › type a task…
+```
+
+Rules added:
+- Consecutive tool and thinking blocks stack with no blank line; everything else gets one.
+- Bash keeps its last three output lines after success, so test results stay visible.
+- Header is one dim line; one blank line of air below it; status line has no fill and carries
+  the spinner while running; the approval prompt moves to the status line with the key legend
+  in the input row.
+- Typing Enter during a run queues the task; it starts when the run ends. The status line shows
+  the queue depth.
+- Scrolling up stays anchored when new lines arrive; PgDn returns to following.
+- A welcome card with the GLMH banner and four facts is shown once and scrolls away. Below 84
+  columns only the facts are shown.
+- Transcript width is capped at 110 columns and offset by one column from the left edge.

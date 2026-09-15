@@ -133,3 +133,8 @@ loop, TUI and eval runner. A run ends when the model gives a final answer, when 
 detector sees the same action three times, on an endpoint error, or when the user presses Esc.
 Context is the model's full 202,752-token window. The only size number left is the API's own
 max output field, set to the model's maximum and clamped per request so the call stays valid.
+
+## D25 · 2026-09-15 · Visual design v2
+Three attention levels, one accent colour, no filled bars, tight stacking of tool activity,
+bash tail kept after success, queued tasks while a run is active, anchored scrolling, banner
+welcome card. Details in `docs/specs/tui.md`, "Visual design v2".

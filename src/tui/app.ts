@@ -63,6 +63,8 @@ export function runTui(o: TuiOptions): Promise<number> {
       quitting: false,
       git: gitInfo(o.cwd),
       toolText: new Map<string, string>(),
+      queue: [] as string[],
+      prevLines: 0,
     };
     let pendingEsc = "";
     let escTimer: ReturnType<typeof setTimeout> | undefined;
@@ -184,6 +186,7 @@ export function runTui(o: TuiOptions): Promise<number> {
             b.detail = `${e.preview || (e.error ? "error" : `${e.chars.toLocaleString()} chars`)}${secs}`;
             b.snippet = e.snippet;
             st.toolText.delete(e.id);
+            if (e.error && !b.tail.length && e.preview) b.tail = [];
           }
           break;
         }
@@ -262,7 +265,9 @@ export function runTui(o: TuiOptions): Promise<number> {
           st.usage = usageToday();
           st.git = gitInfo(o.cwd);
           schedule();
-          if (st.quitting) finish(0);
+          if (st.quitting) return finish(0);
+          const next = st.queue.shift();
+          if (next) startRun(next);
         });
     };
 
@@ -328,7 +333,11 @@ export function runTui(o: TuiOptions): Promise<number> {
 
     const submit = (text: string) => {
       if (text.startsWith("/")) return slash(text);
-      if (st.running) return hint("a run is in progress: Esc cancels it");
+      if (st.running) {
+        st.queue.push(text);
+        system(`queued (${st.queue.length}): ${text}`);
+        return hint("queued; it starts when the current run finishes");
+      }
       startRun(text);
     };
 
@@ -424,24 +433,24 @@ export function runTui(o: TuiOptions): Promise<number> {
     };
 
     const header = (): string => {
-      const left = `${style.bold(" glmh")} ${style.dim(`${o.version} · ${o.profile.model.name} via ${o.config.endpoint.kind} · ${basename(o.cwd)}${st.git ? " " + st.git : ""}`)}`;
+      const left = ` ${style.cyan(style.bold("glmh"))} ${style.dim(`${o.version} · ${o.profile.model.name} · ${o.config.endpoint.kind} · ${basename(o.cwd)}${st.git ? " " + st.git : ""}`)}`;
       const right = style.dim(`today ${st.usage.requests} / ~${o.config.daily_request_estimate} `);
       const pad = Math.max(1, screen.cols - w(left) - w(right));
       return left + " ".repeat(pad) + right;
     };
 
+    const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     const statusRow = (now: number): string => {
       let text: string;
-      if (st.pending) text = style.yellow("approval needed") + style.dim(" · y yes · n no · a always · Esc no");
-      else if (now < st.hintUntil && st.hint) text = style.yellow(st.hint);
+      if (st.pending) text = style.yellow(`? ${st.pending.question}`);
+      else if (now < st.hintUntil && st.hint) text = style.yellow(`! ${st.hint}`);
       else if (st.running) {
         const secs = Math.round((now - st.turnStart) / 1000);
         const phase = { waiting: "waiting for GLM", thinking: "thinking", streaming: "writing", tools: "running tools", check: "running check", idle: "" }[st.phase];
-        text = style.dim(`turn ${st.turn} · ${phase} ${secs}s · ${st.tokensIn.toLocaleString()} in · ${plural(st.toolCalls, "tool call")}${st.retries ? ` · ${plural(st.retries, "retry", "retries")}` : ""} · Esc cancels`);
+        text = style.cyan(SPIN[Math.floor(now / 100) % SPIN.length]) + style.dim(` turn ${st.turn} · ${phase} ${secs}s · ${st.tokensIn.toLocaleString()} in · ${plural(st.toolCalls, "tool call")}${st.retries ? ` · ${plural(st.retries, "retry", "retries")}` : ""}${st.queue.length ? ` · ${st.queue.length} queued` : ""} · Esc cancels`);
       } else text = style.dim(`ready · ${plural(st.sessionTurns, "turn")} this session${st.autoYes ? " · auto-approve on" : ""}${st.showThinking ? " · thinking shown" : ""} · /help`);
-      if (!st.scroll) return style.dim("─ ") + text + style.dim(" " + "─".repeat(Math.max(0, screen.cols - w(text) - 3)));
-      const tag = ` ↑ ${st.scroll} lines up · PgDn `;
-      return style.dim("─ ") + text + style.dim(" " + "─".repeat(Math.max(0, screen.cols - w(text) - w(tag) - 3))) + style.yellow(tag);
+      const scrolled = st.scroll ? style.yellow(`  ↑ ${st.scroll} lines · PgDn to follow`) : "";
+      return " " + text + scrolled;
     };
 
     const render = () => {
@@ -452,14 +461,16 @@ export function runTui(o: TuiOptions): Promise<number> {
         return;
       }
       const now = Date.now();
-      const lines = blocksToLines(st.blocks, Math.min(cols - 1, 110), { showThinking: st.showThinking, now, style });
-      const vp = viewport(lines, rows - 3, st.scroll);
+      const lines = blocksToLines(st.blocks, Math.min(cols - 2, 110), { showThinking: st.showThinking, now, style }).map((l) => " " + l);
+      if (st.scroll > 0 && lines.length > st.prevLines) st.scroll += lines.length - st.prevLines; // stay put while reading
+      st.prevLines = lines.length;
+      const vp = viewport(lines, rows - 4, st.scroll);
       st.scroll = vp.scroll;
       let inputLine: string;
       let cursorCol: number;
       if (st.pending) {
-        inputLine = style.yellow(` ? ${st.pending.question}`) + style.dim("   [y] yes  [n] no  [a] always");
-        cursorCol = w(` ? ${st.pending.question}`) + 1;
+        inputLine = ` ${style.bold("y")}${style.dim(" yes   ")}${style.bold("n")}${style.dim(" no   ")}${style.bold("a")}${style.dim(" yes, and stop asking this session   ")}${style.dim("Esc no")}`;
+        cursorCol = 1;
       } else {
         const prompt = st.running ? style.dim(" › ") : style.cyan(style.bold(" › "));
         const r = renderInput(st.input, cols - 1, " › ");
@@ -467,7 +478,7 @@ export function runTui(o: TuiOptions): Promise<number> {
         cursorCol = r.cursorCol;
         if (!st.input.text && !st.running) inputLine += style.dim("type a task, /help for commands");
       }
-      screen.draw([header(), ...vp.rows, statusRow(now), inputLine], { row: rows - 1, col: cursorCol });
+      screen.draw([header(), "", ...vp.rows, statusRow(now), inputLine], { row: rows - 1, col: cursorCol });
     };
 
     // boot
@@ -488,12 +499,32 @@ export function runTui(o: TuiOptions): Promise<number> {
       process.stderr.write(`glmh crashed: ${err?.stack ?? err}\n`);
       resolve(1);
     });
-    system(`${o.cwd}\n` +
-      `${o.config.check ? `check: ${o.config.check}` : "no check command detected · set check = \"...\" in glmh.toml"} · context ${(o.config.limits.context_tokens / 1000).toFixed(0)}k\n` +
-      `Enter sends · Esc cancels a run · PgUp/PgDn scroll · /help`);
+    push({ kind: "banner", lines: welcomeCard(o, st.usage.requests) });
     render();
     if (o.initialTask) submit(o.initialTask);
   });
+}
+
+const BANNER = [
+  " ██████╗ ██╗     ███╗   ███╗██╗  ██╗",
+  "██╔════╝ ██║     ████╗ ████║██║  ██║",
+  "██║  ███╗██║     ██╔████╔██║███████║",
+  "██║   ██║██║     ██║╚██╔╝██║██╔══██║",
+  "╚██████╔╝███████╗██║ ╚═╝ ██║██║  ██║",
+  " ╚═════╝ ╚══════╝╚═╝     ╚═╝╚═╝  ╚═╝",
+];
+
+/** Banner plus four facts beside it; shown once, scrolls away with use. */
+function welcomeCard(o: TuiOptions, today: number): string[] {
+  const facts = [
+    "",
+    `${o.version} · ${o.profile.model.name} via ${o.config.endpoint.kind}`,
+    o.cwd,
+    `${o.config.check ? `check: ${o.config.check}` : "no check command detected"} · context ${Math.round(o.config.limits.context_tokens / 1000)}k · today ${today} / ~${o.config.daily_request_estimate}`,
+    "Enter sends · Esc cancels a run · PgUp/PgDn scroll · /help",
+    "",
+  ];
+  return BANNER.map((l, i) => ({ art: l, fact: facts[i] ?? "" })).map(({ art, fact }) => JSON.stringify([art, fact]));
 }
 
 /** "main ✚3": current branch and number of changed files, or "" outside git. */

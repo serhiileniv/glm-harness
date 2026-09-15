@@ -47,9 +47,16 @@ describe("renderBlock", () => {
     expect(lines[0]).toBe("  ✗ check failed: bun test");
     expect(lines.slice(1)).toEqual(["    a", "    b", "    c"]);
   });
-  test("blocks are separated by a blank line", () => {
+  test("blocks are separated by a blank line, activity blocks stack tightly", () => {
     const lines = blocksToLines([{ kind: "note", text: "x" }, { kind: "note", text: "y" }], 40, o);
     expect(lines).toEqual(["  ! x", "", "  ! y"]);
+    const tool = (id: string): Block => ({ kind: "tool", id, label: `read ${id}`, status: "ok", detail: "ok", startedAt: 0, tail: [], snippet: [] });
+    const stacked = blocksToLines([tool("a"), { kind: "thinking", turn: 1, text: "", chars: 5, streaming: false }, tool("b"), { kind: "assistant", turn: 1, text: "done", streaming: false }], 60, o);
+    expect(stacked).toEqual(["  → read a", "    ✓ ok", "      thinking (5 chars) · /think", "  → read b", "    ✓ ok", "", "glm › done"]);
+  });
+  test("bash keeps its last lines after success", () => {
+    const b: Block = { kind: "tool", id: "1", label: "$ bun test", status: "ok", detail: "exit code 0", startedAt: 0, tail: ["1 pass", "0 fail", "Ran 1 test"], snippet: [] };
+    expect(renderBlock(b, 60, o)).toEqual(["  → $ bun test", "    │ 1 pass", "    │ 0 fail", "    │ Ran 1 test", "    ✓ exit code 0"]);
   });
 });
 
@@ -75,6 +82,14 @@ describe("thinking glimpse", () => {
     expect(line).toContain("thinking (60 chars) · ");
     expect(line.endsWith("removed")).toBe(true);
     expect(lastLine("abcdefghij", 6)).toBe("…fghij");
+  });
+});
+
+describe("banner", () => {
+  const rows = [["ART1", ""], ["ART2", "fact one"], ["ART3", "fact two"]].map((r) => JSON.stringify(r));
+  test("wide terminals get art beside facts, narrow ones only facts", () => {
+    expect(renderBlock({ kind: "banner", lines: rows }, 100, o)).toEqual([" ART1   ", " ART2   fact one", " ART3   fact two"]);
+    expect(renderBlock({ kind: "banner", lines: rows }, 80, o)).toEqual(["  fact one", "  fact two"]);
   });
 });
 

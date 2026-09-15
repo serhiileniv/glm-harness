@@ -16,8 +16,9 @@ export class Screen {
   constructor(private readonly out: NodeJS.WriteStream = process.stdout, private readonly inp: NodeJS.ReadStream = process.stdin) {}
 
   measure(): void {
-    this.cols = this.out.columns || 80;
-    this.rows = this.out.rows || 24;
+    // GLMH_COLS / GLMH_ROWS exist for automated checks in pseudo-terminals that cannot set a window size.
+    this.cols = Number(process.env.GLMH_COLS) || this.out.columns || 80;
+    this.rows = Number(process.env.GLMH_ROWS) || this.out.rows || 24;
   }
 
   enter(): void {

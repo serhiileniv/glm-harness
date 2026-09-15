@@ -9,7 +9,8 @@ export type Block =
   | { kind: "check"; command: string; ok: boolean; output: string }
   | { kind: "done"; reason: string; summary: string; diff: string; stats: string; quota: string; quotaWarn: boolean }
   | { kind: "aborted"; turn: number }
-  | { kind: "system"; text: string };
+  | { kind: "system"; text: string }
+  | { kind: "banner"; lines: string[] };
 
 export interface Style {
   dim(s: string): string;
@@ -143,12 +144,13 @@ export function renderBlock(b: Block, w: number, o: RenderOptions): string[] {
     case "user": {
       const t = new Date(b.at);
       const stamp = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
-      return [s.dim(`── ${stamp} ` + "─".repeat(Math.max(0, w - stamp.length - 4))), ...indented(wrapText(b.text, w - 6), s.bold("you › "), "      ")];
+      return [s.dim(`── ${stamp} ` + "─".repeat(Math.max(0, w - stamp.length - 4))), ...indented(wrapText(b.text, w - 6), s.bold("you ") + s.dim("› "), "      ")];
     }
     case "assistant": {
-      if (!b.text) return b.streaming ? [s.cyan("glm › ") + s.dim(spin(o.now))] : [];
+      const prefix = s.cyan(s.bold("glm ")) + s.dim("› ");
+      if (!b.text) return b.streaming ? [prefix + s.dim(spin(o.now))] : [];
       const lines = renderMarkdown(b.text, w - 6, s);
-      return indented(lines, s.cyan("glm › "), "      ");
+      return indented(lines, prefix, "      ");
     }
     case "thinking": {
       const n = b.chars || width(b.text);
@@ -160,14 +162,15 @@ export function renderBlock(b: Block, w: number, o: RenderOptions): string[] {
       return indented(wrapText(b.text || "…", w - 8), s.dim("      ┆ "), s.dim("      ┆ ")).map((l) => s.dim(l));
     }
     case "tool": {
-      const head = indented(wrapText(b.label, w - 4), s.cyan("  → "), "    ");
-      const tail = (lines: string[]) => lines.slice(-6).flatMap((l) => wrapText(l, w - 6)).map((l) => s.dim("    │ " + l));
-      if (b.status === "running") return [...head, ...tail(b.tail), ...wrapText(s.dim(`    ${spin(o.now)} ${Math.round((o.now - b.startedAt) / 1000)}s`), w)];
+      const head = indented(wrapText(b.label, w - 4), s.dim("  → "), "    ");
+      const tail = (lines: string[], n: number) => lines.slice(-n).flatMap((l) => wrapText(l, w - 6)).map((l) => s.dim("    │ " + l));
+      if (b.status === "running") return [...head, ...tail(b.tail, 6), ...wrapText(s.dim(`    ${spin(o.now)} ${Math.round((o.now - b.startedAt) / 1000)}s`), w)];
       if (b.status === "ok") {
         const snippet = b.snippet.flatMap((l) => wrapText(l, w - 6)).map((l) => s.dim("      " + l));
-        return [...head, ...wrapText(`    ${s.green("✓")} ${s.dim(b.detail)}`, w), ...snippet];
+        const kept = b.label.startsWith("$ ") ? tail(b.tail, 3) : [];
+        return [...head, ...kept, ...wrapText(`    ${s.green("✓")} ${s.dim(b.detail)}`, w), ...snippet];
       }
-      return [...head, ...wrapText(`    ${s.red("✗")} ${s.dim(b.detail)}`, w), ...tail(b.tail)];
+      return [...head, ...tail(b.tail, 6), ...wrapText(`    ${s.red("✗")} ${s.dim(b.detail)}`, w)];
     }
     case "note":
       return indented(wrapText(b.text, w - 4), s.yellow("  ! "), "    ");
@@ -192,16 +195,26 @@ export function renderBlock(b: Block, w: number, o: RenderOptions): string[] {
       return [s.yellow(`  ⨯ cancelled turn ${b.turn} · partial output discarded`)];
     case "system":
       return wrapText(b.text, w - 2).map((l) => s.dim("  " + l));
+    case "banner": {
+      const rows = b.lines.map((l) => JSON.parse(l) as [string, string]);
+      if (w < 84) return rows.filter(([, f]) => f).flatMap(([, f]) => wrapText(f, w - 2)).map((l) => s.dim("  " + l));
+      return rows.map(([art, fact]) => s.cyan(" " + art) + "   " + s.dim(fact));
+    }
   }
 }
 
+const TIGHT = new Set<Block["kind"]>(["tool", "thinking"]);
+
+/** Blocks are separated by a blank line, except consecutive activity blocks (tool calls, thinking), which stack. */
 export function blocksToLines(blocks: Block[], w: number, o: RenderOptions): string[] {
   const out: string[] = [];
+  let prev: Block | undefined;
   for (const b of blocks) {
     const lines = renderBlock(b, w, o);
     if (!lines.length) continue;
-    if (out.length) out.push("");
+    if (out.length && !(prev && TIGHT.has(prev.kind) && TIGHT.has(b.kind))) out.push("");
     out.push(...lines);
+    prev = b;
   }
   return out;
 }
