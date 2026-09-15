@@ -17,7 +17,9 @@ export interface ChatOptions {
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-const BACKOFF_429 = [3000, 6000, 12000, 24000, 48000, 60000, 60000, 60000]; // about 4.5 minutes of patience; the free route is often busy
+// Sums to ~90s: most 429s on the free route clear within a few seconds, so poll fast early and
+// give up loud rather than grinding silently for minutes (measured: old curve summed to 3.6min).
+const BACKOFF_429 = [2000, 3000, 5000, 8000, 13000, 21000, 34000];
 const REQUEST_TIMEOUT_MS = 240_000;
 
 export const isAbort = (e: unknown) => e instanceof Error && e.name === "AbortError";
@@ -103,7 +105,7 @@ export class Client implements ChatClient {
           await sleepAbortable(wait + Math.random() * 1000, opts.signal);
           continue;
         }
-        throw new Error(`endpoint returned ${res.status} after ${retries} retries: ${text.slice(0, 200)}`);
+        throw new Error(`${extractErrorMessage(text) ?? `endpoint returned ${res.status}`} (after ${retries} retries, ~${Math.round(BACKOFF_429.reduce((a, b) => a + b, 0) / 1000)}s)`);
       }
       const streaming = opts.stream && (res.headers.get("content-type") ?? "").includes("text/event-stream");
       let parsed: { message: Message; finish_reason: string; usage: Usage };
@@ -154,6 +156,17 @@ export class Client implements ChatClient {
     if (!res.ok) throw new Error(`GET /models returned ${res.status}`);
     const json: any = await res.json();
     return (json.data ?? []).map((m: any) => String(m.id));
+  }
+}
+
+/** Pull the human message out of a JSON error body ({error:{message}} or {message}); undefined if it isn't JSON. */
+function extractErrorMessage(text: string): string | undefined {
+  try {
+    const json = JSON.parse(text);
+    const msg = json.error?.message ?? json.message;
+    return typeof msg === "string" ? msg : undefined;
+  } catch {
+    return undefined;
   }
 }
 

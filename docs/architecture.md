@@ -69,7 +69,7 @@ fields for `chat_template_kwargs: {enable_thinking: true, clear_thinking: false}
 
 | Event | Action |
 | --- | --- |
-| 429 | wait 2, 4, 8, 16, 32 s; then stop with quota message |
+| 429 | wait 2, 3, 5, 8, 13, 21, 34 s (~90s total); then stop with the server's own error message |
 | 5xx, network | retry 3 times, 2 s apart |
 | finish_reason = length | append partial content, inject "Your reply was cut off. Call a tool now." |
 | tool_calls missing but `<tool_call>` in content | fallback parser; count as malformed in metrics |
